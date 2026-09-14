@@ -1,16 +1,10 @@
-.vc-vmwr-modal-content {
-    padding: 16px 4px 16px 16px;
-}
-
-.vc-vmwr-modal-title {
-    flex-grow: 1;
-}
-
 .vc-vmwr-modal-container {
     width: 100%;
     height: 100%;
+    min-height: 400px;
     display: flex;
     gap: 8px;
+    padding: 4px 0;
 }
 
 .vc-vmwr-modal-list {
@@ -94,8 +88,8 @@
     display: flex;
     flex-direction: column;
     width: 100%;
+    min-width: 0;
 }
-
 
 .vc-vmwr-user-avatar {
     border-radius: 50%;
@@ -105,6 +99,11 @@
 }
 
 .vc-vmwr-member-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5em;
     background-color: var(--background-secondary);
     padding: 5px;
     border-radius: 5px;
@@ -114,11 +113,13 @@
     display: flex;
     align-items: center;
     gap: 5px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .vc-vmwr-member-list-header-text .vc-info-icon {
     color: var(--interactive-muted);
-    margin-left: auto;
+    flex-shrink: 0;
     cursor: pointer;
     transition: color ease-in 0.1s;
 }
@@ -137,4 +138,14 @@
     height: 2px;
     width: 100%;
     background-color: var(--background-modifier-active);
+}
+
+.vc-vmwr-user-username {
+    color: var(--text-muted);
+}
+
+.vc-vmwr-member-list-actions {
+    display: flex;
+    gap: 0.4em;
+    flex-shrink: 0;
 }

@@ -4,12 +4,16 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Button } from "@components/Button";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { InfoIcon } from "@components/Icons";
-import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize, openModal } from "@utils/modal";
+import { copyWithToast, getUniqueUsername } from "@utils/discord";
+import { sleep } from "@utils/misc";
+import type { RenderModalProps } from "@vencord/discord-types";
 import { findByCodeLazy, findComponentByCodeLazy } from "@webpack";
-import { Constants, GuildChannelStore, GuildMemberStore, GuildRoleStore, Parser, RestAPI, ScrollerThin, Text, Tooltip, useEffect, useRef, UserStore, useState } from "@webpack/common";
+import { Constants, FluxDispatcher, GuildChannelStore, GuildMemberStore, GuildRoleStore, Modal, openModal, Parser, RestAPI, ScrollerThin, Text, Tooltip, useEffect, useRef, UserStore, useState } from "@webpack/common";
 
+import { formatMemberExport } from "../format";
 import { cl, GuildUtils } from "../utils";
 
 type GetRoleIconData = (role: any, size: number) => { customIconSrc?: string; unicodeEmoji?: any; };
@@ -23,8 +27,6 @@ function LoadingDots({ dotRadius, themed }: { dotRadius: number; themed: boolean
         </ErrorBoundary>
     );
 }
-
-
 
 function getRoleIconSrc(role: any) {
     const icon = getRoleIconData(role, 20);
@@ -49,7 +51,8 @@ function RoleCircle({ color }: { color?: string; }) {
 function MembersContainer({ guildId, roleId }: { guildId: string; roleId: string; }) {
     // Safely get channelId, fallback to guildId if no selectable channels
     const selectableChannels = GuildChannelStore.getChannels(guildId)?.SELECTABLE;
-    const channelId = selectableChannels?.[0]?.channel?.id || guildId;
+    const memberListChannelId: string | undefined = selectableChannels?.[0]?.channel?.id;
+    const channelId = memberListChannelId || guildId;
 
     // RMC: RoleMemberCounts - Try API endpoint first, fallback to calculating from members
     const [RMC, setRMC] = useState<Record<string, number>>({});
@@ -181,26 +184,136 @@ function MembersContainer({ guildId, roleId }: { guildId: string; roleId: string
         };
     }, [guildId, members, apiCountsLoaded]);
 
-    const roleMembers = members
-        .filter(x => x?.roles?.includes(roleId))
-        .map(x => UserStore.getUser(x.userId))
-        .filter(x => x != null);
+    const allMembers = members
+        .filter(x => x != null)
+        .map(x => ({ member: x, user: UserStore.getUser(x.userId) }))
+        .filter(x => x.user != null);
+
+    const roleMembers = allMembers.filter(({ member }) => member.roles?.includes(roleId));
+
+    const guildRoles = GuildRoleStore.getRolesSnapshot(guildId);
+
+    // Drives the same member-list subscription the sidebar uses when you scroll, which is the only
+    // way a user account enumerates members it has not seen. Discord withholds the "offline" group
+    // on guilds over ~1000 members, so above that this loads online members only.
+    const [loading, setLoading] = useState(false);
+    const [loadedCount, setLoadedCount] = useState(0);
+
+    async function loadAllMembers() {
+        if (loading || !memberListChannelId) return;
+        setLoading(true);
+
+        const seen = () => GuildMemberStore.getMemberIds(guildId).length;
+        const RANGES_PER_REQUEST = 3;
+        // ponytail: hard stop at ~60k rows so a huge guild cannot spin forever; raise if you outgrow it
+        const MAX_REQUESTS = 200;
+
+        let offset = 0;
+        let stale = 0;
+
+        try {
+            for (let i = 0; i < MAX_REQUESTS && stale < 2; i++) {
+                const before = seen();
+
+                FluxDispatcher.dispatch({
+                    type: "GUILD_SUBSCRIPTIONS_FLUSH",
+                    subscriptions: {
+                        [guildId]: {
+                            channels: {
+                                [memberListChannelId]: Array.from({ length: RANGES_PER_REQUEST }, (_, n) => {
+                                    const start = offset + n * 100;
+                                    return [start, start + 99];
+                                })
+                            }
+                        }
+                    }
+                });
+
+                await sleep(700);
+
+                offset += RANGES_PER_REQUEST * 100;
+                // two consecutive batches that add nobody means we have reached the end of the list
+                stale = seen() > before ? 0 : stale + 1;
+                setLoadedCount(seen());
+            }
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // which part each list is up to, so repeated clicks walk through an oversized export
+    const copyPart = useRef<Record<string, number>>({});
+
+    function copyMembers(entries: typeof allMembers, what: string, key: string) {
+        const blocks = formatMemberExport(
+            entries.map(({ member, user }) => ({
+                nick: member.nick,
+                username: getUniqueUsername(user),
+                roleIds: member.roles ?? []
+            })),
+            guildRoles
+        );
+
+        const part = (copyPart.current[key] ?? 0) % blocks.length;
+        copyPart.current[key] = part + 1;
+
+        copyWithToast(blocks[part], blocks.length > 1
+            ? `Copied part ${part + 1}/${blocks.length} of ${entries.length} ${what} - click again for the next part`
+            : `Copied ${entries.length} ${what} to clipboard!`);
+    }
 
     return (
         <div className={cl("modal-members")}>
             <div className={cl("member-list-header")}>
                 <div className={cl("member-list-header-text")}>
                     <Text>
-                        {roleMembers.length} loaded / {RMC[roleId] || 0} members with this role<br />
+                        {roleMembers.length} loaded / {RMC[roleId] || 0} members with this role
                     </Text>
                     <Tooltip text="For roles with over 100 members, only the first 100 and the cached members will be shown.">
                         {props => <InfoIcon {...props} />}
                     </Tooltip>
                 </div>
-
+                <div className={cl("member-list-actions")}>
+                    <Tooltip text={memberListChannelId
+                        ? "Scrolls the member list for you so uncached members get loaded. Servers over ~1000 members only expose online members."
+                        : "No readable channel in this server to load the member list from."}>
+                        {tooltipProps => (
+                            <Button
+                                {...tooltipProps}
+                                size="small"
+                                variant="primary"
+                                disabled={loading || !memberListChannelId}
+                                onClick={loadAllMembers}
+                            >
+                                {loading ? `Loading... ${loadedCount}` : "Load all"}
+                            </Button>
+                        )}
+                    </Tooltip>
+                    <Button
+                        size="small"
+                        variant="secondary"
+                        disabled={roleMembers.length === 0}
+                        onClick={() => copyMembers(roleMembers, "members with this role", `role:${roleId}`)}
+                    >
+                        Copy role
+                    </Button>
+                    <Tooltip text="Copies every member cached for this server, with their roles. Long lists are split - click again for the next part.">
+                        {tooltipProps => (
+                            <Button
+                                {...tooltipProps}
+                                size="small"
+                                variant="secondary"
+                                disabled={allMembers.length === 0}
+                                onClick={() => copyMembers(allMembers, "members", "all")}
+                            >
+                                Copy all ({allMembers.length})
+                            </Button>
+                        )}
+                    </Tooltip>
+                </div>
             </div>
             <ScrollerThin orientation="auto">
-                {roleMembers.map(x => {
+                {roleMembers.map(({ user: x }) => {
                     if (!x) return null;
                     return (
                         <div key={x.id} className={cl("user-div")}>
@@ -249,19 +362,14 @@ function MembersContainer({ guildId, roleId }: { guildId: string; roleId: string
     );
 }
 
-function VMWRModal({ guildId, props }: { guildId: string; props: ModalProps; }) {
+function VMWRModal({ guildId, props }: { guildId: string; props: RenderModalProps; }) {
     const roleObj = GuildRoleStore.getRolesSnapshot(guildId);
     const roles = Object.keys(roleObj).map(key => roleObj[key]).sort((a, b) => b.position - a.position);
 
     const [selectedRole, selectRole] = useState<any | null>(roles[0] || null);
 
     return (
-        <ModalRoot {...props} size={ModalSize.LARGE}>
-            <ModalHeader>
-                <Text className={cl("modal-title")} variant="heading-lg/semibold">View members with role</Text>
-                <ModalCloseButton onClick={props.onClose} />
-            </ModalHeader>
-            <ModalContent className={cl("modal-content")}>
+        <Modal {...props} size="lg" title="View members with role">
                 <div className={cl("modal-container")}>
                     <ScrollerThin className={cl("modal-list")} orientation="auto">
                         {roles.map((role, index) => {
@@ -309,8 +417,7 @@ function VMWRModal({ guildId, props }: { guildId: string; props: ModalProps; }) 
                         />
                     )}
                 </div>
-            </ModalContent>
-        </ModalRoot >
+        </Modal>
     );
 }
 
@@ -323,4 +430,3 @@ export function openVMWRModal(guildId) {
         />
     );
 }
-
