@@ -1,6 +1,6 @@
 /*
  * Vencord, a Discord client mod
- * Copyright (c) 2024 Vendicated and contributors
+ * Copyright (c) 2025 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
@@ -8,11 +8,11 @@ import "./styles.css";
 
 import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/ContextMenu";
 import definePlugin from "@utils/types";
+import type { Guild } from "@vencord/discord-types";
 import { Menu } from "@webpack/common";
-import type { Guild } from "discord-types/general";
 
-import { MemberIcon } from "./componenents/icons";
-import { openVMWRModal } from "./componenents/ViewMembersModal";
+import { MemberIcon } from "./components/icons";
+import { openVMWRModal } from "./components/ViewMembersModal";
 
 // VMWR: View Members With Role
 const makeContextMenuPatch: () => NavContextMenuPatchCallback = () => (children, { guild }: { guild: Guild, onClose(): void; }) => {
