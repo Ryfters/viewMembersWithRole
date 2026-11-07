@@ -5,9 +5,10 @@
  */
 
 import { InfoIcon } from "@components/Icons";
+import { Text } from "@components/Text";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize, openModal } from "@utils/modal";
 import { findByCodeLazy, findExportedComponentLazy } from "@webpack";
-import { Constants, GuildChannelStore, GuildMemberStore, GuildStore, Parser, RestAPI, ScrollerThin, Text, Tooltip, useEffect, UserStore, useState } from "@webpack/common";
+import { Constants, GuildChannelStore, GuildMemberStore, GuildRoleStore, Parser, RestAPI, ScrollerThin, Tooltip, useEffect, UserStore, useState } from "@webpack/common";
 import { UnicodeEmoji } from "@webpack/types";
 import type { Role } from "discord-types/general";
 
@@ -115,16 +116,16 @@ function MembersContainer({ guildId, roleId }: { guildId: string; roleId: string
                             <ThreeDots dotRadius={5} themed={true} />
                         </div>
                     ) : !RMC[roleId] ? (
-                        <Text className={cl("member-list-footer")} variant="text-md/normal">No member found with this role</Text>
+                        <Text className={cl("member-list-footer")} size="md" weight="normal">No member found with this role</Text>
                     ) : RMC[roleId] === roleMembers.length ? (
                         <>
                             <div className={cl("divider")} />
-                            <Text className={cl("member-list-footer")} variant="text-md/normal">All members loaded</Text>
+                            <Text className={cl("member-list-footer")} size="md" weight="normal">All members loaded</Text>
                         </>
                     ) : rolesFetched.includes(roleId) ? (
                         <>
                             <div className={cl("divider")} />
-                            <Text className={cl("member-list-footer")} variant="text-md/normal">All cached members loaded</Text>
+                            <Text className={cl("member-list-footer")} size="md" weight="normal">All cached members loaded</Text>
                         </>
                     ) : (
                         <div className={cl("member-list-footer")}>
@@ -138,7 +139,7 @@ function MembersContainer({ guildId, roleId }: { guildId: string; roleId: string
 }
 
 function VMWRModal({ guildId, props }: { guildId: string; props: ModalProps; }) {
-    const roleObj = GuildStore.getRoles(guildId);
+    const roleObj = GuildRoleStore.getRolesSnapshot(guildId);
     const roles = Object.keys(roleObj).map(key => roleObj[key]).sort((a, b) => b.position - a.position);
 
     const [selectedRole, selectRole] = useState(roles[0]);
@@ -146,7 +147,7 @@ function VMWRModal({ guildId, props }: { guildId: string; props: ModalProps; }) 
     return (
         <ModalRoot {...props} size={ModalSize.LARGE}>
             <ModalHeader>
-                <Text className={cl("modal-title")} variant="heading-lg/semibold">View members with role</Text>
+                <Text className={cl("modal-title")} size="lg" weight="semibold">View members with role</Text>
                 <ModalCloseButton onClick={props.onClose} />
             </ModalHeader>
             <ModalContent className={cl("modal-content")}>
@@ -182,7 +183,7 @@ function VMWRModal({ guildId, props }: { guildId: string; props: ModalProps; }) 
                                             )
 
                                         }
-                                        <Text variant="text-md/normal">
+                                        <Text size="md" weight="normal">
                                             {role?.name || "Unknown role"}
                                         </Text>
                                     </div>
